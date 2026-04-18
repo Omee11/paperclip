@@ -1,0 +1,58 @@
+name: Require Issue Link
+
+# Security review: the PR body (github.event.pull_request.body) is untrusted input
+# and is handled via the safe env-var pattern — bound to $PR_BODY, then matched with
+# grep. Never interpolated directly into the shell command string. The github-script
+# step constructs its comment body with template literals over context values only
+# (owner, repo, PR number) — none from untrusted sources.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  check-issue-link:
+    name: Issue link required
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Scan PR body for closing reference
+        id: check
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if printf '%s' "$PR_BODY" | grep -qiE '(closes|fixes|resolves)\s+#[0-9]+'; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment and fail if missing
+        if: steps.check.outputs.found == 'false'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: [
+                '## Missing issue link',
+                '',
+                'This PR does not reference an issue. Every PR should link to an open issue using a closing keyword in the PR body:',
+                '',
+                '```',
+                'Closes #123',
+                '```',
+                '',
+                `If no issue exists yet, please [open one first](${repoUrl}/issues/new/choose) and update this PR body to reference it.`,
+                '',
+                'This is a soft check — if your PR genuinely has no associated issue (e.g. a trivial typo fix or maintainer-only tooling change), add a short note in the PR body explaining why and ask a maintainer to override this check.',
+              ].join('\n'),
+            });
+            core.setFailed('PR body must contain a closing issue reference (e.g. "Closes #123").');
