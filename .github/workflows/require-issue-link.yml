@@ -1,14 +1,22 @@
 name: Require Issue Link
 
-# Security review: the PR body (github.event.pull_request.body) is untrusted input
-# and is handled via the safe env-var pattern — bound to $PR_BODY, then matched with
-# grep. Never interpolated directly into the shell command string. The github-script
-# step constructs its comment body with template literals over context values only
-# (owner, repo, PR number) — none from untrusted sources.
+# Security review:
+# - Uses pull_request_target so fork PRs receive a write-scoped GITHUB_TOKEN and the
+#   comment step actually posts instead of silently 403-ing. Safe here because
+#   neither step checks out PR-supplied code — the scan reads $PR_BODY from an env
+#   var, and the github-script step only calls the REST API with trusted context
+#   values (owner, repo, PR number). No untrusted content is executed or written.
+# - The PR body (github.event.pull_request.body) is untrusted and is handled via
+#   the safe env-var pattern: bound to $PR_BODY, then matched with grep. Never
+#   interpolated directly into the shell command string.
+# - "synchronize" is intentionally omitted from the trigger types to avoid posting
+#   duplicate "missing issue link" comments on every push. Adding a Closes/Fixes/
+#   Resolves reference happens by editing the PR body, which fires "edited", so
+#   the check still runs when contributors add the reference after opening.
 
 on:
-  pull_request:
-    types: [opened, edited, reopened, synchronize]
+  pull_request_target:
+    types: [opened, edited, reopened]
 
 permissions:
   pull-requests: write
