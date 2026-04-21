@@ -48,9 +48,12 @@ jobs:
             // The "edited" event fires on both title and body edits, so without
             // this check a contributor editing the title while the body still
             // lacks a closing reference would accumulate a new bot comment each
-            // time. The check still fails unconditionally when the link is
-            // missing — only the comment is skipped on repeats.
-            const { data: comments } = await github.rest.issues.listComments({
+            // time. Uses github.paginate so the check scans every page of
+            // comments, not just the first 100 — otherwise on high-traffic PRs
+            // the original bot comment could fall outside the fetched page and
+            // duplicates would reappear. The check still fails unconditionally
+            // when the link is missing — only the comment is skipped on repeats.
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
